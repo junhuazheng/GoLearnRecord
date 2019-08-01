@@ -1,0 +1,126 @@
+package controllers
+
+import (
+	"blog/models"
+	"blog/util"
+	"time"
+)
+
+type BlogController struct {
+	baseController
+}
+
+func (c *BlogController) list() {
+	var (
+		page int
+		pagesize int = 6
+		offset int
+		list []*models.Post
+		hosts []*models.Post
+		catdId int
+		keyword string
+	)
+
+	categorys := []*models.Category{}
+	c.o.QueryTable(new(models.Category).TableName()).All(&categorys)
+	c.Data["cates"] = categorys
+
+	if page, _ := c.GetInt("page"); page < 1 {
+		page = 1
+	}
+	offset = (page - 1) * pagesize
+	query := c.o.QueryTable(new(models.post).TableName())
+
+	if c.actionName == "resource" {
+		query = query.Filter("types", 0)
+	} else {
+		query = query.Filter("types", 1)
+	}
+
+	if cateId, _ = c.GetInt("cate_id"); cateId != 0 {
+		query =query.Filter("category_id", cateId)
+	}
+
+	keyword = c.Input().Get("keyword")
+	if keyword != "" {
+		query = query.Filter("titile_contains", keyword)
+	}
+	
+	query.OrderBy("-views").Limit(10, 0).All(&hosts)
+
+	if c.actionName == "home" {
+		query = query.Filter("is_top", 1)
+	}
+
+	count, _ := query.Count()
+	c.Data["count"] = count
+	query.OrderBy("-created").Limit(pagesize, offset).All(&list)
+
+	c.Data["list"] = list
+	c.Data["pagebar"] = util.NewParge(page, int(count), pagesize, "/" + c.actionName, true).ToString()
+	c.Data["hosts"] = hosts
+}
+
+//home page
+func (c *BlogController) Home() {
+	c.list()
+	c.TplName = c.controllerName + "/home.html"
+}
+
+func (c *BlogController) Article() {
+	c.list()
+	c.TplName = c.controllerName + "/article.html"
+}
+
+func (c *BlogController) Detail() {
+	if id, _ := c.GetInt("id"); id != 0 {
+		post := models.Post{Id: id}
+		c.o.Read(&post)
+		c.Data["post"] = post
+		comments := []*models.Comment{}
+		query := c.o.QueryTable(new(models.Comment).TableName()).Filter("post_id", id)
+		query.All(&comments)
+		c.Data["comments"] = comments
+
+		categorys := []*models.Categroy{}
+		c.o.QueryTable(new(models.Category).TableName()).All(&categorys)
+		c.Data["cates"] = categorys
+		var hosts []*models.Post
+		querys := c.o.QueryTable(new(models.Post).TableName()).All(&hosts)
+		c.Data["hosts"] = hosts
+	}
+	c.TplName = c.controllerName + "/detail.html"
+}
+
+func (c *BlogController) About() {
+	post := models.Post{Id: 1}
+	c.o.Read(&post)
+	c.Data["post"] = post
+	c.TplName = c.controllerName + "/about.html"
+}
+
+func (c *BlogController) Timeline() {
+	c.TplName = c.controllerName + "/timeline.html"
+}
+
+func (c *BlogController) Resource() {
+	c.list()
+	c.TplName = controllerName + "resource.html"
+}
+
+//insert comment
+func (c *BlogController) Comment() {
+	Comment := models.Comment{}
+	Comment.Username = c.GetString("username")
+	Comment.Content = c.GetString("content")
+	Comment.Ip = c.getClientIp()
+	Comment.PostId, _ = c.GetInt("post_id")
+	Comment.Created = time.New()
+	if _, err := c.o.Insert(&Comment); err != nil {
+		c.History("Post evaluation failed" + err.Error(), "")
+	} else {
+		c.History("Release evaluation seccess", "")
+	}
+}
+
+
